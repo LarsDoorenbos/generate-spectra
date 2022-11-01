@@ -1,0 +1,20 @@
+output_path: "./output_${SLURM_JOB_ID}_${NOW}"
+dataset_file: datasets.galaxies
+
+multigpu: no
+mp_loaders: 4
+batch_size: 4
+learning_rate: 1.0e-4
+scheduler_lambda: 0.997
+max_epochs: 1000
+preprocessing: 'scale' # ['none', 'scale']
+latent_dimensionality: 128
+
+use_logger: no
+con_backbone: 'resnet' # ['resnet']
+
+resnet: 
+  base_channels: 64
+  channel_mults: [1, 2, 4, 8, 16]
+
+load_from: null
