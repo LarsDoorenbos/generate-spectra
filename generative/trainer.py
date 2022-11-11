@@ -78,7 +78,7 @@ def grid_of_spectrum_predictions(model, loader, num_predictions):
         predictions_.append(predictions_b)
 
     images = torch.cat(images_, dim=0)
-    images = (images + 1.0) / 2.0
+    images = images.cpu() * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
 
     spectra = torch.cat(spectra_, dim=0)
     predictions = torch.cat(predictions_, dim=0)
