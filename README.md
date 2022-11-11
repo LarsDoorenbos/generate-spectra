@@ -1,6 +1,6 @@
 # Generating galaxy spectra from photometry with conditional diffusion models
 
-Code used for our paper ["Generating astronomical spectra from photometry with conditional diffusion models"](), accepted at the NeurIPS 2022 workshop on Machine Learning and the Physical Sciences.
+Code used for our paper ["Generating astronomical spectra from photometry with conditional diffusion models"](https://arxiv.org/abs/2211.05556), accepted at the NeurIPS 2022 workshop on Machine Learning and the Physical Sciences.
 
 ![Some generated spectra](figures/generated.png "samples")
 
