@@ -13,6 +13,8 @@ latent_dimensionality: 128
 use_logger: no
 con_backbone: 'resnet' # ['resnet']
 
+weight_decay: 0.001
+
 resnet: 
   base_channels: 64
   channel_mults: [1, 2, 4, 8, 16]

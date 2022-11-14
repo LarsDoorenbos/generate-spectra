@@ -89,6 +89,7 @@ def visualize(model, loader, num_images):
     min_y = 10000
 
     img, spec, _ = loader.dataset[vis_ind]
+    spec = spec.numpy()
 
     if np.max(spec) > max_y:
         max_y = np.max(spec)
@@ -102,6 +103,8 @@ def visualize(model, loader, num_images):
     
     for i, ind in enumerate(indices):
         img, spec, _ = loader.dataset[ind]        
+        spec = spec.numpy()
+
         img = img * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
 
         axarr[0, i+1].imshow(np.moveaxis(img.numpy(),0,2))
@@ -293,7 +296,8 @@ def build_engine(trainer: Trainer, output_path: str, validation_loader: DataLoad
     @engine.on(Events.ITERATION_COMPLETED(every=1000))
     def test(_: Engine):
         LOGGER.info("Validation loss computation...")
-        engine_test.run(validation_loader, max_epochs=1)
+        loader = _loader_subset(validation_loader, params['batch_size'] * 2)
+        engine_test.run(loader, max_epochs=1)
 
     # Save the best models by val loss
     @engine_test.on(Events.EPOCH_COMPLETED)
@@ -368,7 +372,7 @@ def train_contrastive(local_rank: int, params: dict):
 
     model = _build_model(params)
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
+    optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"], weight_decay=params["weight_decay"])
     scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda x: params["scheduler_lambda"])
 
     trainer = Trainer(model, optimizer, scheduler)
