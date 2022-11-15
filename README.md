@@ -15,5 +15,10 @@ A trade-off between speed and information controls our understanding of astronom
 If you find this work helpful, consider citing it using
 
 ```
-
+@article{doorenbos2022generating,
+  title={Generating astronomical spectra from photometry with conditional diffusion models},
+  author={Doorenbos, Lars and Cavuoti, Stefano and Longo, Giuseppe and Brescia, Massimo and Sznitman, Raphael and M{\'a}rquez-Neila, Pablo},
+  journal={arXiv preprint arXiv:2211.05556},
+  year={2022}
+}
 ```
