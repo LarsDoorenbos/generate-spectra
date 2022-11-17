@@ -158,7 +158,7 @@ def rank_samples(images, spectra, predictions, con_trainer, output_path, num_sho
         for i in range(num_shown):
             axarr[4+i].plot(loglam, predictions[img, sort_indices[i], 0, :].cpu().numpy())
             axarr[4+i].set_ylim(min_y, max_y)
-            mse = np.mean((loglam, predictions[img, sort_indices[i], 0, :].cpu().numpy() - spectra[img, 0].cpu().numpy()) ** 2)
+            mse = np.mean((predictions[img, sort_indices[i], 0, :].cpu().numpy() - spectra[img, 0].cpu().numpy()) ** 2)
             axarr[4+i].set_title(str("{:.2f} {:.2f}".format(scores[sort_indices[i]], mse)))
                 
         plt.subplots_adjust(wspace=0, hspace=0)
