@@ -128,6 +128,8 @@ def get_features(images, predictions, model):
 
 
 def rank_samples(images, spectra, predictions, con_trainer, output_path, num_shown, num_con_mean):
+    loglam = np.load('data/galaxies/loglam_uniform1.npz', allow_pickle=True)['arr_0'][0]
+    
     img_features, spec_features = get_features(images, predictions, con_trainer.model)
     images = images.cpu() * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
     for img in range(len(images)):
@@ -143,62 +145,26 @@ def rank_samples(images, spectra, predictions, con_trainer, output_path, num_sho
         axarr[1].plot(spectra[img, 0].cpu().numpy())
         axarr[1].set_ylim(min_y, max_y)
 
-        axarr[2].plot(np.mean(predictions[img].cpu().numpy(), axis=0)[0])
+        axarr[2].plot(loglam, np.mean(predictions[img].cpu().numpy(), axis=0)[0])
         axarr[2].set_ylim(min_y, max_y)
         mse = np.mean((np.mean(predictions[img].cpu().numpy(), axis=0)[0] - spectra[img, 0].cpu().numpy()) ** 2)
         axarr[2].set_title(str("{:.2f}".format(mse)))
 
-        axarr[3].plot(np.mean(predictions[img, sort_indices[:num_con_mean], 0, :].cpu().numpy(), axis=0))
+        axarr[3].plot(loglam, np.mean(predictions[img, sort_indices[:num_con_mean], 0, :].cpu().numpy(), axis=0))
         axarr[3].set_ylim(min_y, max_y)
         mse = np.mean((np.mean(predictions[img, sort_indices[:num_con_mean], 0, :].cpu().numpy(), axis=0) - spectra[img, 0].cpu().numpy()) ** 2)
         axarr[3].set_title(str("{:.2f}".format(mse)))
         
         for i in range(num_shown):
-            axarr[4+i].plot(predictions[img, sort_indices[i], 0, :].cpu().numpy())
+            axarr[4+i].plot(loglam, predictions[img, sort_indices[i], 0, :].cpu().numpy())
             axarr[4+i].set_ylim(min_y, max_y)
-            mse = np.mean((predictions[img, sort_indices[i], 0, :].cpu().numpy() - spectra[img, 0].cpu().numpy()) ** 2)
+            mse = np.mean((loglam, predictions[img, sort_indices[i], 0, :].cpu().numpy() - spectra[img, 0].cpu().numpy()) ** 2)
             axarr[4+i].set_title(str("{:.2f} {:.2f}".format(scores[sort_indices[i]], mse)))
                 
         plt.subplots_adjust(wspace=0, hspace=0)
         filename = os.path.join(output_path, f"ranked_samples" + str(img) + ".png")
         os.makedirs(output_path, exist_ok=True)
         plt.savefig(filename, bbox_inches='tight', pad_inches=0.0)
-        plt.close('all')
-
-        loglam = np.load('data/lens_search/loglam_uniform1.npz', allow_pickle=True)['arr_0'][0]
-
-        plt.imshow(np.moveaxis((images)[img].numpy(),0,2))
-        plt.axis('off')
-        plt.savefig('img' + str(img), bbox_inches='tight')
-        plt.close('all')
-
-        plt.figure(figsize=(16, 8))
-        plt.plot(loglam, spectra[img, 0].cpu().numpy())
-        plt.xticks(fontsize=18)
-        plt.yticks(fontsize=18)
-        plt.ylim(-1, 1)
-        plt.savefig('target' + str(img), bbox_inches='tight')
-        plt.close('all')
-        plt.figure(figsize=(16, 8))
-        plt.plot(loglam, np.mean(predictions[img].cpu().numpy(), axis=0)[0])
-        plt.xticks(fontsize=18)
-        plt.yticks(fontsize=18)
-        plt.ylim(-1, 1)
-        plt.savefig('mean' + str(img), bbox_inches='tight')
-        plt.close('all')
-        plt.figure(figsize=(16, 8))
-        plt.plot(loglam, predictions[img, sort_indices[0], 0, :].cpu().numpy())
-        plt.xticks(fontsize=18)
-        plt.yticks(fontsize=18)
-        plt.ylim(-1, 1)
-        plt.savefig('con' + str(img), bbox_inches='tight')
-        plt.close('all')
-        plt.figure(figsize=(16, 8))
-        plt.plot(loglam, np.mean(predictions[img, sort_indices[:num_con_mean], 0, :].cpu().numpy(), axis=0))
-        plt.xticks(fontsize=18)
-        plt.yticks(fontsize=18)
-        plt.ylim(-1, 1)
-        plt.savefig('conmean' + str(img), bbox_inches='tight')
         plt.close('all')
 
 
