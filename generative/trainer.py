@@ -168,14 +168,14 @@ class Trainer:
         image, spectra, _ = batch
         spectra = spectra[:, None]
 
-        self.model.eval()
+        self.average_model.eval()
 
         device = idist.device()
         spectra = spectra.to(device, non_blocking=True)
         image = image.to(device, non_blocking=True)
 
         predictions = torch.stack(
-            [self.model(None, image) for _ in range(self.num_eval_predictions)],
+            [self.average_model(None, image) for _ in range(self.num_eval_predictions)],
             dim=1
         ) 
 
