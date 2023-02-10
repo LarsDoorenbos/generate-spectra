@@ -72,7 +72,11 @@ def get_diffs(predictions, spectra):
 @torch.no_grad()
 def evaluate_mean(loader, model, num_predictions, con_model, num_con_mean):
     model.eval()
-
+    
+    mses = []
+    con_mses = []
+    con_mean_mses = []
+    
     for batch in loader:
         images_b, spectra_b, _ = batch
         images_b = images_b.to(idist.device())
@@ -85,19 +89,22 @@ def evaluate_mean(loader, model, num_predictions, con_model, num_con_mean):
             dim=1
         )
         predictions_mean = torch.mean(predictions_b, dim=1)
-        mses = get_diffs(predictions_mean, spectra_b)
+        mses.append(get_diffs(predictions_mean, spectra_b))
 
         img_features, spec_features = get_features(images_b, predictions_b, con_model)
         scores = np.sum(img_features * spec_features, axis=-1)
         sort_indices = [np.arange(predictions_b.shape[0]), np.argmax(scores, axis=-1)]
 
         predictions_con = predictions_b[sort_indices]
-        con_mses = get_diffs(predictions_con, spectra_b)
+        con_mses.append(get_diffs(predictions_con, spectra_b))
 
         sort_indices = np.argsort(scores, axis=-1)[:, -num_con_mean:]
         predictions_con_mean = torch.mean(np.take_along_axis(predictions_b, sort_indices[:, :, None, None], axis=1), dim=1)
-        con_mean_mses = get_diffs(predictions_con_mean, spectra_b)
-
+        con_mean_mses.append(get_diffs(predictions_con_mean, spectra_b))
+    
+    mses = torch.cat(mses, dim=0)
+    con_mses = torch.cat(con_mses, dim=0)
+    con_mean_mses = torch.cat(con_mean_mses, dim=0)
     return mses, con_mses, con_mean_mses
 
 
