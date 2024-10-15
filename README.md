@@ -1,6 +1,6 @@
-# Generating galaxy spectra from photometry with conditional diffusion models
+# Galaxy spectroscopy without spectra
 
-Code used for our paper ["Generating astronomical spectra from photometry with conditional diffusion models"](https://arxiv.org/abs/2211.05556), accepted at the NeurIPS 2022 workshop on Machine Learning and the Physical Sciences.
+Code used for the papers ["Galaxy spectroscopy without spectra: Galaxy properties from photometric images with conditional diffusion models"](https://arxiv.org/pdf/2406.18175) (under review) and ["Generating astronomical spectra from photometry with conditional diffusion models"](https://arxiv.org/abs/2211.05556) (NeurIPS 2022 workshop on Machine Learning and the Physical Sciences).
 
 ![Some generated spectra](figures/generated.png "samples")
 
@@ -8,7 +8,7 @@ This repository contains the code to train our contrastive and generative networ
 
 ### Abstract
 
-A trade-off between speed and information controls our understanding of astronomical objects. Fast-to-acquire photometric observations provide global properties, while costly and time-consuming spectroscopic measurements enable a better understanding of the physics governing their evolution. Here, we tackle this problem by generating galaxy spectra directly from photometry, through which we obtain an estimate of their intricacies from easily acquired images. This is done by using multimodal conditional diffusion models, where the best out of the generated spectra is selected with a contrastive network. Initial experiments on minimally processed SDSS data show promising results.
+Modern spectroscopic surveys can only target a small fraction of the vast amount of photometrically cataloged sources in wide-field surveys. Here, we report the development of a generative AI method capable of predicting optical galaxy spectra from photometric broad-band images alone. This method draws from the latest advances in diffusion models in combination with contrastive networks. We pass multi-band galaxy images into the architecture to obtain optical spectra. From these, robust values for galaxy properties can be derived with any methods in the spectroscopic toolbox, such as standard population synthesis techniques and Lick indices. When trained and tested on 64 × 64-pixel images from the Sloan Digital Sky Survey, the global bimodality of star-forming and quiescent galaxies in photometric space is recovered, as well as a mass-metallicity relation of star-forming galaxies. The comparison between the observed and the artificially created spectra shows good agreement in overall metallicity, age, Dn4000, stellar velocity dispersion, and E(B-V) values. Photometric redshift estimates of our generative algorithm can compete with other current, specialized deep-learning techniques. Moreover, this work is the first attempt in the literature to infer velocity dispersion from photometric images. Additionally, we can predict the presence of an active galactic nucleus up to an accuracy of $82\,\%$. With our method, scientifically interesting galaxy properties, normally requiring spectroscopic inputs, can be obtained in future data sets from large-scale photometric surveys alone. The spectra prediction via AI can further assist in creating realistic mock catalogs.
 
 ### Usage
 
@@ -23,7 +23,18 @@ For inference, use `generate.py`. This also makes use of `params_generative.yml`
 
 ### Citation
 
-If you find this work helpful, consider citing it using
+If you find our works helpful, consider citing them using
+
+```
+@article{doorenbos2024galaxy,
+  title={Galaxy spectroscopy without spectra: Galaxy properties from photometric images with conditional diffusion models},
+  author={Doorenbos, Lars and Sextl, Eva and Heng, Kevin and Cavuoti, Stefano and Brescia, Massimo and Torbaniuk, Olena and Longo, Giuseppe and Sznitman, Raphael and M{\'a}rquez-Neila, Pablo},
+  journal={arXiv preprint arXiv:2406.18175},
+  year={2024}
+}
+```
+
+and
 
 ```
 @article{doorenbos2022generating,
