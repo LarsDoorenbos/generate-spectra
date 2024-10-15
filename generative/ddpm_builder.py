@@ -6,12 +6,14 @@ import math
 import torch
 from torch import Tensor
 from torch import nn
+import torch.nn.functional as F
 
 import ignite.distributed as idist
 
 from .unet import GenericUnet
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 
 def linear_schedule(time_steps: int) -> Tuple[Tensor, Tensor, Tensor]:
@@ -80,53 +82,62 @@ class DiffusionModel(nn.Module):
 
 class DenoisingModel(nn.Module):
 
-    def __init__(self, diffusion: DiffusionModel, unet: GenericUnet):
+    def __init__(self, diffusion: DiffusionModel, unet: GenericUnet, reduction: str):
         super().__init__()
         self.diffusion = diffusion
         self.unet = unet
+        self.reduction = reduction
 
     @property
     def time_steps(self):
         return self.diffusion.time_steps
 
-    def forward(self, x: torch.Tensor, image: torch.Tensor, t: Optional[int] = None):
+    def forward(self, x: torch.Tensor, image: torch.Tensor, gt: torch.Tensor = None, t: Optional[int] = None):
+
+        if x == None:
+            x = torch.randn((image.shape[0], *self.diffusion.size_to_generate)).to(idist.device())
+
+        if gt != None:
+            if x.shape[-1] == gt.shape[-1]:
+                if self.reduction == 'subsample':
+                    lowres_gt = gt[:, :, ::8]
+            else:
+                lowres_gt = gt
+            
+            # Linearly upsample the lowres_gt to the same size as x. Predict the full resolution gt from the lowres_gt.
+            upsampled_gt = F.interpolate(lowres_gt, (x.shape[-1]), mode='linear')
+        else:
+            upsampled_gt = None
 
         if self.training:
-            if t is None:
-                raise ValueError("'t' cannot be None at training time")
-            return self.forward_step(x, image, t)
+            return self.forward_step(x, image, upsampled_gt, t)
         else:
-            return self.forward_denoising(x, image, t)
+            return self.forward_denoising(x, image, upsampled_gt, t)
 
-    def forward_step(self, x: torch.Tensor, image: torch.Tensor, t: int):
-        return self.unet(x, image, t)
+    def forward_step(self, x: torch.Tensor, image: torch.Tensor, upsampled_gt, t: int):
+        return self.unet(x, image, upsampled_gt, t)
 
-    def forward_denoising(self, x: torch.Tensor, image: torch.Tensor, init_t: Optional[int] = None):
-
+    def forward_denoising(self, xt: torch.Tensor, image: torch.Tensor, upsampled_gt: Optional[torch.Tensor], init_t: Optional[int] = None):
+        
         if init_t is None:
             init_t = self.time_steps - 1
 
-        if x == None:
-            x = torch.randn((image.shape[0], *self.diffusion.size_to_generate))
-
-        xt = x.to(idist.device())
-        shape = xt.shape
-
         for t in range(init_t, -1, -1):
-            # Auxiliary values
             alpha_t = self.diffusion.alphas[t]
             cumalpha_t = self.diffusion.cumalphas[t]
 
-            t_ = torch.full(size=(shape[0],), fill_value=float(t), device=xt.device)
+            t_ = torch.full(size=(xt.shape[0],), fill_value=float(t), device=xt.device)
+
             # Predict the noise of x_t
-            pred_noise = self.unet(xt, image, t_)
+            pred_noise = self.unet(xt, image, upsampled_gt, t_)
+            
             # Sample next x_t
             z = torch.randn_like(xt) if t > 0 else torch.zeros_like(xt)
             factor = (1 - alpha_t) / torch.sqrt(1 - cumalpha_t)
             xt_mean = 1/torch.sqrt(alpha_t) * (xt - factor*pred_noise)
             xt_sigma = torch.sqrt(self.diffusion.betas[t])
             xt = xt_mean + xt_sigma*z
-
+        
         return xt
 
 
@@ -135,26 +146,28 @@ def build_model(
         schedule: str,
         item_shapes: Tuple[int, int, int],
         conditioning: str,
+        dataset: str,
+        reduction: str,
         backbone_params: Dict[str, Any]
         ) -> DenoisingModel:
     
     size_to_generate = [1, item_shapes[1][0]]
     diffusion = DiffusionModel(schedule, time_steps, size_to_generate)
-    
+
     unet = GenericUnet(
         time_steps=time_steps,
-        in_ch=2 if conditioning == 'concat' else 1,
+        in_ch=2 if conditioning == 'concat' or 'sr' in dataset else 1,
         out_ch=1,
         condition_shape=item_shapes[0],
         conditioning=conditioning,
         **backbone_params
     )
 
-    model = DenoisingModel(diffusion, unet)
+    model = DenoisingModel(diffusion, unet, reduction)
 
     num_of_parameters = sum(map(torch.numel, model.parameters()))
-    
     num_of_parameters_condition = sum(map(torch.numel, model.unet.condition_encoder.parameters()))
+    
     LOGGER.info("Trainable params: %d of which %d in condition encoder", num_of_parameters, num_of_parameters_condition)
 
     return model

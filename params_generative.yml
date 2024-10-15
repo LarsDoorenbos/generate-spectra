@@ -1,22 +1,34 @@
-output_path: "./output_${SLURM_JOB_ID}_${NOW}"
-dataset_file: datasets.galaxies
+output_path: "./logs/output_${SLURM_JOB_ID}_${NOW}"
+dataset_file: datasets.lr_5band
 
 multigpu: no
+distributed: no
 mp_loaders: 4
-batch_size: 4
+batch_size: 512
 learning_rate: 1.0e-4
-max_epochs: 3000
-scheduler_lambda: 0.998
+max_epochs: 1000
 beta_schedule: "cosine" # One of ["cosine", "linear"]
-polyak_alpha: 0.99
-preprocessing: 'scale' # ['none', 'scale']
+polyak_alpha: 0.9999
+preprocessing: 'log' # ['none', 'log']
+reduction: 'subsample' # ['subsample']
 backbone: 'spectrumunet' # ['spectrumunet']
 
 use_logger: no
-conditioning: x-attention
+conditioning: x-attention # ['none', 'x-attention', 'concat']
 time_steps: 250
 
+img_res: 64
+
+optim:
+    learning_rate: 1.0e-4
+    lr_function: "polynomial"
+    lr_params:
+        power: 1.0     # setting to 1.0 means linear decay
+        min_lr: 1.0e-6 # learning rate value for the final step of training
+
 spectrumunet:
+    pretrained_encoder: False
+    encoder_size: 18
     dim: 64
     attention_depths: [3, 4]
     dim_mults: [1, 2, 4, 8, 16]
@@ -24,14 +36,22 @@ spectrumunet:
 load_from: null
 
 load_con_from: null
-latent_dimensionality: 128
+latent_dimensionality: 256
 con_backbone: 'resnet'
 
 resnet:
+  pretrained: yes
   base_channels: 64
   channel_mults: [1, 2, 4, 8, 16]
 
-num_eval_predictions: 25
-num_eval_samples: 50
-num_shown: 5
-num_con_mean: 5
+num_eval_samples: 3
+num_eval_predictions: 3
+num_shown: 1
+
+load_lr_gen_from: null
+load_lr_con_from: null
+load_sr_gen_from: null
+load_sr_con_from: null
+
+num_lr_to_save: 2
+num_sr_to_save: 1

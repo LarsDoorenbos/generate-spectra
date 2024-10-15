@@ -14,8 +14,6 @@ from torch import nn
 from torch import Tensor
 import torch
 from torch.utils.data import DataLoader, Subset
-from torch.optim.lr_scheduler import MultiplicativeLR
-import torch.nn.functional as F
 
 # Ignite imports
 from ignite.engine import Engine, Events
@@ -28,6 +26,7 @@ from ignite.contrib.metrics import GpuInfo
 
 # Local imports
 from .builder import build_model, MultimodalModel
+from generative.lr_functions import LRFcts
 from utils.utils import archive_code, expanduservars
 
 
@@ -75,9 +74,9 @@ def get_features(loader, model):
 
 
 @torch.no_grad()
-def visualize(model, loader, num_images):
+def visualize(model, loader, num_images, dataset):
     img_features, spec_features = get_features(loader, model)
-    
+
     vis_ind = random.randint(0, len(spec_features) - 1)
     scores = torch.sum(img_features * spec_features[vis_ind], dim=-1)
     
@@ -96,21 +95,31 @@ def visualize(model, loader, num_images):
     if np.min(spec) < min_y:
         min_y = np.min(spec)
 
-    img = img * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
-    axarr[0, 0].imshow(np.moveaxis(img.numpy(),0,2))
-    axarr[0, 0].axis('off')
+    if '5band' not in dataset:
+        img = img * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
+        axarr[0, 0].imshow(np.moveaxis(img.numpy(),0,2))
+        axarr[0, 0].axis('off')
+    else:
+        # Show middle 3 bands
+        axarr[0, 0].imshow(np.moveaxis(img[1:-1].numpy(),0,2))
+        axarr[0, 0].axis('off')
+
     axarr[1, 0].plot(spec)
     
     for i, ind in enumerate(indices):
         img, spec, _ = loader.dataset[ind]        
-        spec = spec.numpy()
 
-        img = img * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
+        if '5band' not in dataset:
+            img = img * torch.tensor([0.229, 0.224, 0.225])[:, None, None] + torch.tensor([0.485, 0.456, 0.406])[:, None, None]
+            axarr[0, i+1].imshow(np.moveaxis(img.numpy(),0,2))
+            axarr[0, i+1].axis('off')
+        else:
+            axarr[0, i+1].imshow(np.moveaxis(img[1:-1].numpy(),0,2))
+            axarr[0, i+1].axis('off')
 
-        axarr[0, i+1].imshow(np.moveaxis(img.numpy(),0,2))
-        axarr[0, i+1].axis('off')
         axarr[1, i+1].plot(spec)
 
+        spec = spec.numpy()
         if np.max(spec) > max_y:
             max_y = np.max(spec)
         if np.min(spec) < min_y:
@@ -171,7 +180,10 @@ class Trainer:
         loss.backward()
         self.optimizer.step()
 
-        return {"num_items": batch_size, "loss": loss.item()}
+        lr = self.scheduler.get_last_lr()[0]
+        self.scheduler.step()
+
+        return {"num_items": batch_size, "loss": loss.item(), "lr": lr}
 
     @torch.no_grad()
     def test_step(self, _: Engine, batch: Tensor) -> Dict[str, Any]:
@@ -216,7 +228,7 @@ def build_engine(trainer: Trainer, output_path: str, validation_loader: DataLoad
         ProgressBar(persist=True).attach(engine_test)
 
         if params["use_logger"]:
-            wandb_logger = WandBLogger(project='generate-spectra')
+            wandb_logger = WandBLogger(project='generate-spectra', config=params)
 
             wandb_logger.attach_output_handler(
                 engine,
@@ -260,21 +272,22 @@ def build_engine(trainer: Trainer, output_path: str, validation_loader: DataLoad
     @idist.one_rank_only(rank=0, with_barrier=True)
     def log_info(engine: Engine):
         LOGGER.info(
-            "epoch=%d, iter=%d, speed=%.2fimg/s, loss=%.4g, gpu:0 util=%.2f%%",
+            "epoch=%d, iter=%d, speed=%.2fimg/s, loss=%.4g, lr=%.4g gpu:0 util=%.2f%%",
             engine.state.epoch,
             engine.state.iteration,
             engine.state.metrics["imgs/s"],
             engine.state.output["loss"],
+            engine.state.output["lr"],
             engine.state.metrics["gpu:0 util(%)"]
         )
 
     # Visualize every 1000 iterations
-    @engine.on(Events.ITERATION_COMPLETED(every=1000))
+    @engine.on(Events.ITERATION_COMPLETED(every=5000))
     @idist.one_rank_only(rank=0, with_barrier=True)
     def save_qualitative_results(_: Engine, num_images=5):
         LOGGER.info("Visualizing...")
-        loader = _loader_subset(validation_loader, 2048)
-        plt = visualize(_flatten(trainer.model), loader, num_images)
+        loader = _loader_subset(validation_loader, params['batch_size'])
+        plt = visualize(_flatten(trainer.model), loader, num_images, params["dataset_file"])
         filename = os.path.join(output_path, f"result_{engine.state.iteration:06}.png")
         os.makedirs(output_path, exist_ok=True)
         plt.savefig(filename, bbox_inches='tight', pad_inches=0.0)
@@ -286,17 +299,11 @@ def build_engine(trainer: Trainer, output_path: str, validation_loader: DataLoad
     def save_model(engine: Engine):
         checkpoint_handler(engine, trainer.objects_to_save(engine))
 
-    # Scheduler step
-    @engine.on(Events.EPOCH_COMPLETED)
-    @idist.one_rank_only(rank=0, with_barrier=True)
-    def scheduler_step(_: Engine):
-        trainer.scheduler.step()
-
     # Compute the val loss every 1000 iterations
     @engine.on(Events.ITERATION_COMPLETED(every=1000))
     def test(_: Engine):
         LOGGER.info("Validation loss computation...")
-        loader = _loader_subset(validation_loader, params['batch_size'] * 2)
+        loader = _loader_subset(validation_loader, 512)
         engine_test.run(loader, max_epochs=1)
 
     # Save the best models by val loss
@@ -327,10 +334,10 @@ def _build_model(params: dict) -> Model:
     return model
 
 
-def _build_datasets(params: dict) -> Tuple[DataLoader, DataLoader, torch.Tensor]:
+def _build_datasets(params: dict, output_path) -> Tuple[DataLoader, DataLoader, torch.Tensor]:
     dataset_file: str = params['dataset_file']
     dataset_module = importlib.import_module(dataset_file)
-    train_dataset, validation_dataset = dataset_module.training_dataset(params["preprocessing"])  # type: ignore
+    train_dataset, validation_dataset = dataset_module.training_dataset(params, output_path)  # type: ignore
 
     LOGGER.info("%d datapoints in dataset '%s'", len(train_dataset), dataset_file)
     LOGGER.info("%d datapoints in validation dataset '%s'", len(validation_dataset), dataset_file)
@@ -364,16 +371,26 @@ def train_contrastive(local_rank: int, params: dict):
     LOGGER.info("%d GPUs available", torch.cuda.device_count())
 
     # Load the datasets
-    train_loader, validation_loader = _build_datasets(params)
+    train_loader, validation_loader = _build_datasets(params, output_path)
 
     # Build the model, optimizer, trainer and training engine
-    input_shapes = [i.shape for i in train_loader.dataset[0]]
+    input_shapes = [train_loader.dataset[0][0].shape, train_loader.dataset[0][1].shape]
     LOGGER.info("Input shapes: " + str(input_shapes))
 
     model = _build_model(params)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"], weight_decay=params["weight_decay"])
-    scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda x: params["scheduler_lambda"])
+
+    num_batches_per_epoch = len(train_loader)  # fixme what happens in multigpu (wabout device-wise batch size?)
+    lr_total_steps = num_batches_per_epoch * params["max_epochs"]
+
+    lr_restart_steps = []  # todo add lr_restarts code for now defaulting to not using restarts
+
+    p_opt = params['optim']
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=LRFcts(p_opt, lr_total_steps,
+                                                                                        lr_restart_steps))
+
+    LOGGER.info("lr_schedule: '{}' starting lr {} and lr_params {} over total steps {}".format(p_opt['lr_function'], p_opt['learning_rate'], p_opt['lr_params'], lr_total_steps))
 
     trainer = Trainer(model, optimizer, scheduler)
     engine = build_engine(trainer, output_path, validation_loader, params=params)

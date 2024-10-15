@@ -24,11 +24,14 @@ class MultimodalModel(torch.nn.Module):
 
 
 def build_model(params):
-    image_model = torch.hub.load('pytorch/vision:v0.6.0', 'resnet50', pretrained=True)
+    image_model = torch.hub.load('pytorch/vision:v0.6.0', 'resnet50', pretrained=params[params["con_backbone"]]["pretrained"])
     image_model.fc = nn.Linear(2048, params["latent_dimensionality"])
+
+    # Change the first layer to accept 5 bands
+    if '5band' in params["dataset_file"]:
+        image_model.conv1 = nn.Conv2d(5, 64, kernel_size=7, stride=2, padding=3, bias=False)
     
     spectrum_model = ResNet(params["latent_dimensionality"], **params[params["con_backbone"]])
-    
     model = MultimodalModel(image_model, spectrum_model)
 
     num_of_parameters = sum(map(torch.numel, model.parameters()))

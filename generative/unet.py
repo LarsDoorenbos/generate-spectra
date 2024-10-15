@@ -11,11 +11,21 @@ import torch.nn.functional as F
 from .attention import SpatialTransformer, SpatialTransformerCustom
 
 
-class ResNetEncoder(nn.Module):
+class DummyEncoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.model = torch.hub.load('pytorch/vision:v0.6.0', 'resnet18', pretrained=True)
+
+    def forward(self, x):
+        return x[:, None]
+
+
+class ResNetEncoder(nn.Module):
+    def __init__(self, condition_shape, pretrained_encoder: bool, encoder_size: int):
+        super().__init__()
+        self.model = torch.hub.load('pytorch/vision:v0.6.0', 'resnet' + str(encoder_size), pretrained=pretrained_encoder)
         self.model.fc = nn.Identity()
+        if condition_shape[0] != 3:
+            self.model.conv1 = nn.Conv2d(condition_shape[0], 64, 7, 2, 3, bias=False)
 
     def forward(self, x):
         x = self.model.conv1(x)
@@ -94,8 +104,10 @@ def get_conv_builder(dims: int, **conv_args):
 
 class DownBlock(nn.Module):
 
-    def __init__(self, block_channels, time_embedding_dim, downsample = True):
+    def __init__(self, block_channels, time_embedding_dim, conditioning, downsample = True):
         super().__init__()
+        
+        self.conditioning = conditioning
         
         in_channels = block_channels[0]
         mid_channels = block_channels[1]
@@ -127,11 +139,13 @@ class DownBlock(nn.Module):
             self.down = nn.Identity()
 
     def forward(self, x, time_emb):
-        aux = self.block1(x)
         time_emb = self.time_mlp(time_emb)[:, :, None]
-        time_emb = aux + time_emb
+        aux = self.block1(x)
 
-        aux = self.block2(time_emb) + self.res_conv(x)
+        time_emb = aux + time_emb
+        aux = self.block2(time_emb)
+
+        aux = aux + self.res_conv(x)
         down = self.down(aux)
 
         return down, aux
@@ -139,8 +153,10 @@ class DownBlock(nn.Module):
 
 class UpBlock(nn.Module):
 
-    def __init__(self, block_channels, time_embedding_dim):
+    def __init__(self, block_channels, time_embedding_dim, conditioning):
         super().__init__()
+
+        self.conditioning = conditioning
         
         in_channels = block_channels[0]
         mid_channels = block_channels[1]
@@ -179,6 +195,7 @@ class UpBlock(nn.Module):
 
         aux = self.block1(x)
         time_emb = self.time_mlp(time_emb)[:, :, None]
+
         time_emb = aux + time_emb
         aux = self.block2(time_emb)
 
@@ -230,10 +247,10 @@ class DefaultClassBuilder:
 
 class GenericUnet(nn.Module):
 
-    def __init__(self, out_ch, in_ch, condition_shape, conditioning, dim, dim_mults, attention_depths, time_steps: int, repetitions=2, dims=1,
+    def __init__(self, out_ch, in_ch, condition_shape, conditioning, dim, dim_mults, attention_depths, time_steps: int, pretrained_encoder: bool, encoder_size: int, repetitions=2, dims=1,
                  kernel_size: Union[int, tuple] = 3):
         super().__init__()
-        time_embedding_dim = dim
+        time_embedding_dim = dim * 4
 
         self.conditioning = conditioning
         self.time_steps = time_steps
@@ -250,9 +267,12 @@ class GenericUnet(nn.Module):
             self.condition_encoder.fc = nn.Identity()
             self.first_layer_image_enc = nn.Linear(512, 3598)
         elif self.conditioning == 'x-attention':
-            self.condition_encoder = ResNetEncoder()
+            self.condition_encoder = ResNetEncoder(condition_shape, pretrained_encoder, encoder_size)
             self.cond_encoded_shape = self.condition_encoder(torch.rand(*condition_shape)[None]).shape
-
+        elif self.conditioning == 'none':
+            self.condition_encoder = DummyEncoder()
+            self.cond_encoded_shape = [None, None, condition_shape[0]]
+        
         self.dims = dims
 
         channels = [*map(lambda m: dim * m, dim_mults)]
@@ -269,51 +289,53 @@ class GenericUnet(nn.Module):
 
         while depth < len(channels) - 1:
             block_channels = [down_channels[depth]] + repetitions*[down_channels[depth + 1]]
-            down_block = [DownBlock(block_channels, time_embedding_dim)]
+            down_block = [DownBlock(block_channels, time_embedding_dim, conditioning)]
             
-            if depth in attention_depths and self.conditioning == 'x-attention':
+            if depth in attention_depths:
                 num_heads = block_channels[-1] // 32
                 dim_head = 32
-                down_block.append(SpatialTransformerCustom(block_channels[-1], num_heads, dim_head, depth=1, context_dim=self.cond_encoded_shape[2]))
-                
+                down_block.append(SpatialTransformerCustom(block_channels[-1], num_heads, dim_head, depth=1, context_dim=self.cond_encoded_shape[2] if self.cond_encoded_shape != None else None))
+
             self.down_blocks.append(TimestepEmbedSequential(*down_block))
             depth += 1          
 
-
-        if self.conditioning == 'concat':
-            block_channels = [down_channels[depth]] + (repetitions - 1)*[bottom_channels] + [up_channels[depth]]
-            self.bottom_block = DownBlock(block_channels, time_embedding_dim, downsample=False)
-        elif self.conditioning == 'x-attention':
-            block_channels = [down_channels[depth]] + [up_channels[depth]] + [up_channels[depth]]
-            self.bottom_block = TimestepEmbedSequential(DownBlock(block_channels, time_embedding_dim, downsample=False),
-                                                        SpatialTransformerCustom(block_channels[-1], num_heads, dim_head, depth=1, context_dim=self.cond_encoded_shape[2], return_aux=False),
-                                                        DownBlock(block_channels, time_embedding_dim, downsample=False))
+        # block_channels = [down_channels[depth]] + (repetitions - 1)*[bottom_channels] + [up_channels[depth]]
+    
+        block_channels = [down_channels[depth]] + [up_channels[depth]] + [up_channels[depth]]
+        num_heads = block_channels[-1] // 32
+        dim_head = 32
+        self.bottom_block = TimestepEmbedSequential(DownBlock(block_channels, time_embedding_dim, conditioning, downsample=False),
+                                                    SpatialTransformerCustom(block_channels[-1], num_heads, dim_head, depth=1, context_dim=self.cond_encoded_shape[2] if self.cond_encoded_shape != None else None, return_aux=False),
+                                                    DownBlock(block_channels, time_embedding_dim, conditioning, downsample=False))
 
         self.up_blocks = nn.ModuleList()
         while depth > 0:
             depth -= 1
             block_channels = [up_channels[depth+1] + down_channels[depth+1]] + (repetitions - 1) * [up_channels[depth + 1]] + [up_channels[depth]]
-            up_block = [UpBlock(block_channels, time_embedding_dim)]
+            up_block = [UpBlock(block_channels, time_embedding_dim, conditioning)]
 
-            if depth in attention_depths and self.conditioning == 'x-attention':
+            if depth in attention_depths:
                 num_heads = block_channels[-1] // 32
                 dim_head = 32
-                up_block.append(SpatialTransformer(block_channels[-1], num_heads, dim_head, depth=1, context_dim=self.cond_encoded_shape[2]))
+                up_block.append(SpatialTransformer(block_channels[-1], num_heads, dim_head, depth=1, context_dim=self.cond_encoded_shape[2] if self.cond_encoded_shape != None else None))
 
             self.up_blocks.append(TimestepEmbedSequentialUp(*up_block))
 
         self.conv_cls = build_conv(in_channels=up_channels[depth], out_channels=out_ch, kernel_size=1, padding=0)
 
-    def forward(self, spectrum, image, t):
+    def forward(self, spectrum, image, upsampled_gt, t):
         image_enc = self.condition_encoder(image)
 
         if self.conditioning == 'concat':  
             image_enc = self.first_layer_image_enc(image_enc[:, None])
             x = torch.cat([spectrum, image_enc], dim=1)
             context = None
-        elif self.conditioning == 'x-attention':
+        elif self.conditioning == 'x-attention' or self.conditioning == 'none':
             x = spectrum
             context = image_enc
+
+        if upsampled_gt != None:
+            x = torch.cat([spectrum, upsampled_gt], dim=1)
 
         # Rescale t to the range [-1, 1]
         t = 2.0 * t / self.time_steps - 1.0

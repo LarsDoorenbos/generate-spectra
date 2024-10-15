@@ -1,21 +1,30 @@
-output_path: "./output_${SLURM_JOB_ID}_${NOW}"
-dataset_file: datasets.galaxies
+output_path: "./logs/output_${SLURM_JOB_ID}_${NOW}"
+dataset_file: datasets.lr_5band
 
 multigpu: no
 mp_loaders: 4
-batch_size: 4
+batch_size: 2048
 learning_rate: 1.0e-4
-scheduler_lambda: 0.997
-max_epochs: 1000
-preprocessing: 'scale' # ['none', 'scale']
+max_epochs: 500
+preprocessing: 'log' # ['none', 'scale', 'sigma', 'smooth', 'angstroem', 'arcsinh']
+reduction: 'subsample' # ['subsample', 'interpolate']
 latent_dimensionality: 128
 
 use_logger: no
 con_backbone: 'resnet' # ['resnet']
+img_res: 64
+
+optim:
+    learning_rate: 1.0e-4
+    lr_function: "polynomial"
+    lr_params:
+        power: 1.0     # setting to 1.0 means linear decay
+        min_lr: 1.0e-6 # learning rate value for the final step of training
 
 weight_decay: 0.001
 
 resnet: 
+  pretrained: yes
   base_channels: 64
   channel_mults: [1, 2, 4, 8, 16]
 
