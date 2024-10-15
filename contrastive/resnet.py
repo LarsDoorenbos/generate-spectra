@@ -48,6 +48,7 @@ class ResNet(nn.Module):
             latent_dimensionality: int,
             base_channels: int,
             channel_mults: List[int],
+            **kwargs
     ):
         super().__init__()
 
