@@ -1,6 +1,6 @@
 # Galaxy spectroscopy without spectra
 
-Code used for the papers ["Galaxy spectroscopy without spectra: Galaxy properties from photometric images with conditional diffusion models"](https://arxiv.org/pdf/2406.18175) (under review) and ["Generating astronomical spectra from photometry with conditional diffusion models"](https://arxiv.org/abs/2211.05556) (NeurIPS 2022 workshop on Machine Learning and the Physical Sciences).
+Code used for the papers ["Galaxy spectroscopy without spectra: Galaxy properties from photometric images with conditional diffusion models"](https://arxiv.org/pdf/2406.18175) (The Astrophysical Journal) and ["Generating astronomical spectra from photometry with conditional diffusion models"](https://arxiv.org/abs/2211.05556) (NeurIPS 2022 workshop on Machine Learning and the Physical Sciences).
 
 ![Some generated spectra](figures/generated.png "samples")
 
@@ -29,8 +29,12 @@ If you find our works helpful, consider citing them using
 @article{doorenbos2024galaxy,
   title={Galaxy spectroscopy without spectra: Galaxy properties from photometric images with conditional diffusion models},
   author={Doorenbos, Lars and Sextl, Eva and Heng, Kevin and Cavuoti, Stefano and Brescia, Massimo and Torbaniuk, Olena and Longo, Giuseppe and Sznitman, Raphael and M{\'a}rquez-Neila, Pablo},
-  journal={arXiv preprint arXiv:2406.18175},
-  year={2024}
+  journal={The Astrophysical Journal},
+  volume={977},
+  number={1},
+  pages={131},
+  year={2024},
+  publisher={IOP Publishing}
 }
 ```
 
